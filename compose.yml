@@ -1,0 +1,118 @@
+# Laravel Local Development Environment
+# This docker-compose configuration sets up a complete development stack for Laravel applications
+
+services:
+  #Database Service - MySQL for persistent data storage
+  db:
+    image: mysql:8.0 # Using MySQL v8.0
+    container_name: laravel_db
+    restart: unless-stopped # Automatically restart container unless manually stopped
+    tty: true
+    volumes:
+      - ./dev-data/mysql:/var/lib/mysql # Persistent storage for database
+    ports:
+      - "3307:3306" # Map host port to container port
+    expose:
+      # Opens port 3306 on the container for internal network access
+      - "3306"
+    environment:
+      # Database configuration with default fallbacks
+      DB_HOST: db
+      MYSQL_DATABASE: ${DB_DATABASE:-HealthCare}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-my_password}
+    labels:
+      org.opencontainers.image.title: "mysql"
+      org.opencontainers.image.environment: "dev"
+    networks:
+      - laravel_network
+  #PHP Service - Main Laravel application running on PHP-FPM
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/php/Dockerfile
+    container_name: laravel_app
+    restart: unless-stopped
+    tty: true
+    working_dir: /var/www/app
+    expose:
+      - "9000"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/var/www/app
+    networks:
+      - laravel_network
+    labels:
+      org.opencontainers.image.title: "laravel"
+      org.opencontainers.image.environment: "dev"
+    depends_on:
+      - db
+      - mail
+  # Mail Service - Local email testing service with web interface
+  mail:
+    image: axllent/mailpit:v1.24 # Email testing service
+    container_name: laravel_mailpit
+    restart: unless-stopped
+    volumes:
+      - ./dev-data/mailpit:/data # Persistent storage for emails
+    ports:
+      - 8025:8025 # Web interface port for viewing emails
+      - 1025:1025 # SMTP port for sending emails
+    environment:
+      MP_MAX_MESSAGES: 5000 # Maximum number of stored messages
+      MP_DATABASE: /data/mailpit.db # Database file for storing messages
+      MP_SMTP_AUTH_ACCEPT_ANY: 1 # Accept any SMTP auth
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1 # Allow insecure connections for development
+    labels:
+      org.opencontainers.image.title: "mailpit"
+      org.opencontainers.image.environment: "dev"
+    networks:
+      - laravel_network
+  # MySQL Admin Tool - Web interface for database management
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest # phpMyAdmin web interface
+    container_name: laravel_phpmyadmin
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "5051:80" # Web interface port
+    depends_on:
+      - db # Ensure database is running before phpMyAdmin starts
+    environment:
+      PMA_HOST: db # MySQL host
+      PMA_PORT: 3306 # MySQL port
+      PMA_USER: ${DB_USERNAME:-root} # MySQL user
+      PMA_PASSWORD: ${DB_PASSWORD:-password} # MySQL password
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root} # MySQL root password
+    labels:
+      org.opencontainers.image.title: "phpmyadmin"
+      org.opencontainers.image.environment: "dev"
+    networks:
+      - laravel_network
+  # Nginx Web Server - Handles HTTP requests and serves static files
+  nginx:
+    build:
+      context: .
+      dockerfile: ./docker/nginx/Dockerfile
+    container_name: laravel_nginx
+    restart: unless-stopped
+    tty: true
+    expose:
+      - "80" # Expose HTTP port internally
+    ports:
+      - "3002:80" # Web server port mapping for browser access
+    volumes:
+      - .:/var/www/app:rw # Mount project directory for serving files
+    labels:
+      org.opencontainers.image.title: "nginx"
+      org.opencontainers.image.environment: "dev"
+    depends_on:
+      - app # Ensure PHP-FPM is running
+      - db # Ensure database is available
+      - mail # Ensure mail service is available
+    networks:
+      - laravel_network
+# Docker Networks - Network configuration for container communication
+networks:
+  laravel_network:
+    driver: bridge # Standard bridge network for container communication

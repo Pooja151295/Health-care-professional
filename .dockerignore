@@ -1,0 +1,4 @@
+dev-data/mysql
+dev-data/*
+*.tmp
+*.log
